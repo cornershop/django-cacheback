@@ -211,8 +211,11 @@ class Job(six.with_metaclass(JobBase)):
                 # We replace the item in the cache with a 'timeout' expiry - this
                 # prevents cache hammering but guards against a 'limbo' situation
                 # where the refresh task fails for some reason.
-                timeout = self.timeout(*args, **kwargs)
-                self.store(key, timeout, data)
+                if self.incremental_refresh_timeout:
+                    timeout = self.timeout_retry(*args, retry=retry, **kwargs)
+                else:
+                    timeout = self.timeout(*args, **kwargs)
+                self.store(key, timeout, data, retry=retry)
                 self.async_refresh(*args, **kwargs)
                 return self.process_result(
                     data, call=call, cache_status=self.STALE, sync_fetch=False)
@@ -293,7 +296,7 @@ class Job(six.with_metaclass(JobBase)):
     def prepare_kwargs(self, **kwargs):
         return kwargs
 
-    def store(self, key, expiry, data):
+    def store(self, key, expiry, data, retry=0):
         """
         Add a result to the cache
 
@@ -301,7 +304,7 @@ class Job(six.with_metaclass(JobBase)):
         :expiry: The expiry timestamp after which the result is stale
         :data: The data to cache
         """
-        self.cache.set(key, (expiry, data), self.cache_ttl)
+        self.cache.set(key, (expiry, retry, data), self.cache_ttl)
 
         if getattr(settings, 'CACHEBACK_VERIFY_CACHE_WRITE', True):
             # We verify that the item was cached correctly.  This is to avoid a
@@ -381,6 +384,13 @@ class Job(six.with_metaclass(JobBase)):
         Return the refresh timeout for this item
         """
         return time.time() + self.refresh_timeout
+
+    def timeout_retry(self, retry, *args, **kwargs):
+        """
+        Return the refresh timeout for this item based on current retry.
+        Lineal increment is done by default
+        """
+        return time.time() + self.refresh_timeout * max(1, retry)
 
     def should_missing_item_be_fetched_synchronously(self, *args, **kwargs):
         """
