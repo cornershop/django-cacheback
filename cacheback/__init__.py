@@ -1,3 +1,3 @@
-__version__ = '1.4.0'
+__version__ = '2.0.0.pre1+cornershop'
 
 default_app_config = 'cacheback.apps.CachebackConfig'
