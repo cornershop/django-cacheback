@@ -72,6 +72,9 @@ class Job(six.with_metaclass(JobBase)):
     #: refresh the cache.
     refresh_timeout = 60
 
+    #: Increase refresh_timeout based on current refresh retry
+    incremental_refresh_timeout = False
+
     #: Secifies which cache to use from your `CACHES` setting. It defaults to
     #: `default`.
     cache_alias = None
@@ -175,7 +178,13 @@ class Job(six.with_metaclass(JobBase)):
                     result, call=call, cache_status=self.MISS,
                     sync_fetch=False)
 
-        expiry, data = item
+        try:
+            expiry, retry, data = item
+            retry += 1
+        except ValueError:
+            expiry, data = item
+            retry = 1
+
         delta = time.time() - expiry
         if delta > 0:
             # Cache HIT but STALE expiry - we can either:
@@ -221,7 +230,10 @@ class Job(six.with_metaclass(JobBase)):
         key = self.key(*args, **kwargs)
         item = self.cache.get(key)
         if item is not None:
-            expiry, data = item
+            try:
+                expiry, retry, data = item
+            except ValueError:
+                expiry, data = item
             self.store(key, self.timeout(*args, **kwargs), data)
             self.async_refresh(*args, **kwargs)
 
@@ -295,7 +307,13 @@ class Job(six.with_metaclass(JobBase)):
             # We verify that the item was cached correctly.  This is to avoid a
             # Memcache problem where some values aren't cached correctly
             # without warning.
-            __, cached_data = self.cache.get(key, (None, None))
+            try:
+                item = self.cache.get(key, (None, 1, None))
+                __, __, cached_data = item
+            except ValueError:
+                item = self.cache.get(key, (None, None))
+                __, cached_data = item
+
             if data is not None and cached_data is None:
                 raise RuntimeError(
                     "Unable to save data of type %s to cache" % (
