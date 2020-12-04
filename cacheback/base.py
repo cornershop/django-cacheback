@@ -16,7 +16,7 @@ from .utils import RemovedInCacheback13Warning, enqueue_task, get_job_class
 
 logger = logging.getLogger('cacheback')
 
-MEMCACHE_MAX_EXPIRATION = 2592000
+DEFAULT_EXPIRATION_TTL = 48 * 60 * 60
 
 
 # Container for call args (which makes things simpler to pass around)
@@ -82,7 +82,7 @@ class Job(six.with_metaclass(JobBase)):
     #: Time to store items in the cache.  After this time, we will get a cache
     #: miss which can lead to synchronous refreshes if you have
     #: fetch_on_miss=True.
-    cache_ttl = MEMCACHE_MAX_EXPIRATION
+    cache_ttl = None
 
     #: Whether to perform a synchronous refresh when a result is missing from
     #: the cache.  Default behaviour is to do a synchronous fetch when the cache is empty.
@@ -112,6 +112,7 @@ class Job(six.with_metaclass(JobBase)):
     def __init__(self):
         self.cache_alias = (self.cache_alias or
                             getattr(settings, 'CACHEBACK_CACHE_ALIAS', DEFAULT_CACHE_ALIAS))
+        self.cache_ttl = (self.cache_ttl or getattr(settings, 'CACHEBACK_EXPIRATION_TTL', DEFAULT_EXPIRATION_TTL))
         self.cache = caches[self.cache_alias]
         self.task_options = self.task_options or {}
 
